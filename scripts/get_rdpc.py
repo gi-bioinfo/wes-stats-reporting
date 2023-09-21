@@ -32,6 +32,8 @@ import plotly.graph_objs as go
 import pickle
 import sys
 from datetime import datetime
+import warnings
+warnings.filterwarnings('ignore')
 
 def main():
     """
@@ -61,11 +63,11 @@ def main():
             for project in cli_input.project:
                 write_dir="%s/%s_%s_%s" % (cli_input.out_dir,repo.replace(".git","").split("/")[-1],state,project)
                 if not os.path.exists(write_dir):
-                    os.mkdir(write_dir)
+                    os.makedirs(write_dir)
 
                 tsv_dir="%s/%s" % (write_dir,"tsv")
                 if not os.path.exists(tsv_dir):
-                    os.mkdir(tsv_dir)
+                    os.makedirs(tsv_dir)
 
                 rdpc_stats[repo][project]={}
                 rdpc_stats[repo][project][state]={}
@@ -106,9 +108,9 @@ def save_pkl_plots(out_dir,generated_plots,plot):
     pkl_dir="%s/%s" % (out_dir,"pkl")
 
     if not os.path.exists(svg_dir):
-        os.mkdir(svg_dir)
+        os.makedirs(svg_dir)
     if not os.path.exists(pkl_dir):
-        os.mkdir(pkl_dir)
+        os.makedirs(pkl_dir)
 
     print("Saving plots...")
     for generated_plot in generated_plots.keys():
