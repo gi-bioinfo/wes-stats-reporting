@@ -127,3 +127,6 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+scripts/ego_client_id.txt
+scripts/ego_client_secret.txt
+scripts/get_task_status.py

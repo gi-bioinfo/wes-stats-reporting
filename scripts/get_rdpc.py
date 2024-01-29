@@ -51,9 +51,9 @@ def main():
     parser.add_argument('-o', '--output_directory', dest="out_dir", help="SONG RDPC URL", default=os.getcwd(),type=str)
     parser.add_argument('-r', '--repo', dest="repo", help="Workflow Github Repo", required=True,type=str,nargs="+")
     parser.add_argument('-x', '--exclude_runs', dest="excluded_runs", help="Runs to exclude",nargs="+",type=str)
-    parser.add_argument('-z', '--plot', dest="plot", help="make pretty plots", default=True,type=bool)
+    parser.add_argument('-z', '--no_plot', dest="no_plot", help="prevent pretty plots", default=False,action='store_true')
     parser.add_argument('-d', '--debug', dest="debug", help="debug", default=False,type=bool)
-    parser.add_argument('-s', '--state', dest="state", help="analysis state to query : True False",default=["COMPLETE"],choices=["EXECUTOR_ERROR","SYSTEM_ERROR","COMPLETE","RUNNING"],nargs="+")
+    parser.add_argument('-s', '--state', dest="state", help="analysis state to query : EXECUTOR_ERROR,SYSTEM_ERROR,COMPLETE,RUNNING",default=["COMPLETE"],choices=["EXECUTOR_ERROR","SYSTEM_ERROR","COMPLETE","RUNNING"],nargs="+")
 
     cli_input= parser.parse_args()
 
@@ -98,28 +98,32 @@ def main():
 
                 timestamp=datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
-                rdpc_stats[repo][project][state]['runs'].to_csv("%s/%s_%s_%s_%s_%s.tsv" % (tsv_dir,repo.replace(".git","").split("/")[-1],project,str(state),timestamp,"runs"),sep="\t")
-                rdpc_stats[repo][project][state]['tasks'].to_csv("%s/%s_%s_%s_%s_%s.tsv" % (tsv_dir,repo.replace(".git","").split("/")[-1],project,str(state),timestamp,"tasks"),sep="\t")
+                rdpc_stats[repo][project][state]['runs'].to_csv("%s/%s_%s_%s_%s_%s.tsv.gz" % (tsv_dir,repo.replace(".git","").split("/")[-1],project,str(state),timestamp,"runs"),sep="\t",compression='gzip')
+                rdpc_stats[repo][project][state]['tasks'].to_csv("%s/%s_%s_%s_%s_%s.tsv.gz" % (tsv_dir,repo.replace(".git","").split("/")[-1],project,str(state),timestamp,"tasks"),sep="\t",compression='gzip')
 
                 plots={}
-                for ind,item in enumerate(["total_realtime_hrs","max_mem_gb"]):
-                    title="%s %s %s %s" % (repo.replace(".git","").split("/")[-1],project,item,timestamp)
-                    plots["fig.%s.%s.%s" % (1,ind+1,title.replace(" ","_"))]=generate_plot(
-                        run_aggregate_df,
-                        500,
-                        500,
-                        [project],
-                        [item],
-                        title
-                    )
 
-                save_pkl_plots(write_dir,plots,cli_input.plot)
+                if not cli_input.no_plot:
+                    for ind,item in enumerate(["total_realtime_hrs","max_mem_gb"]):
+                        title="%s %s %s %s" % (repo.replace(".git","").split("/")[-1],project,item,timestamp)
+                        plots["fig.%s.%s.%s" % (1,ind+1,title.replace(" ","_"))]=generate_plot(
+                            run_aggregate_df,
+                            500,
+                            500,
+                            [project],
+                            [item],
+                            title
+                        )
+
+                    save_pkl_plots(write_dir,plots)
+                else:
+                    print("'--no_plot' specified...Skipping plots")
 
 
 
     
  
-def save_pkl_plots(out_dir,generated_plots,plot):
+def save_pkl_plots(out_dir,generated_plots):
     svg_dir="%s/%s" % (out_dir,"svg")
     pkl_dir="%s/%s" % (out_dir,"pkl")
 
@@ -135,11 +139,10 @@ def save_pkl_plots(out_dir,generated_plots,plot):
         file.close()
     print("Saving plots...Complete")
 
-    if plot:
-        print("Saving plots SVGs...")
-        for generated_plot in generated_plots.keys():
-            generated_plots[generated_plot].write_image("%s/%s.svg" % (svg_dir,generated_plot))
-        print("Saving plots SVGs...Complete")
+    print("Saving plots SVGs...")
+    for generated_plot in generated_plots.keys():
+        generated_plots[generated_plot].write_image("%s/%s.svg" % (svg_dir,generated_plot))
+    print("Saving plots SVGs...Complete")
 
 def generate_plot(metrics,x_dim,y_dim,cols,rows,title):
     print("Generating plot for %s" % (title))
@@ -363,16 +366,28 @@ def generate_rdpc_aggregates(response,run_aggregate_df,task_aggregate_df,debug):
         run_aggregate_df.loc[agg_count,"total_duration_hrs"]=sum([task['duration'] if task['duration'] else 0  for task in run['tasks']])/3.6e+6
         run_aggregate_df.loc[agg_count,"task_misisng_info_count"]=len([task for task in run['tasks'] if task['duration']==None or task['realtime']==None or task['memory']==None])
         run_aggregate_df.loc[agg_count,"duration_hrs"]=run['duration']/3.6e+6 if run['duration'] else 0
-        run_aggregate_df.loc[agg_count,"max_mem_gb"]=np.max([task['memory']/1073741824 if task['memory'] else 0 for task in run['tasks']])
-        run_aggregate_df.loc[agg_count,"max_cpus"]=np.max([task['cpus'] if task['cpus'] else 0 for task in run['tasks']])
+
+
+        if len([task['memory'] for task in run['tasks']])==0:
+            run_aggregate_df.loc[agg_count,"max_mem_gb"]=None
+        else:
+            run_aggregate_df.loc[agg_count,"max_mem_gb"]=np.max([task['memory']/1073741824 if task.get('memory') else 0 for task in run['tasks']])
+
+
+        if len([task['cpus'] for task in run['tasks']])==0:
+            run_aggregate_df.loc[agg_count,"max_cpus"]=None
+        else:
+            run_aggregate_df.loc[agg_count,"max_cpus"]=np.max([task['cpus'] if task['cpus'] else 0 for task in run['tasks']])
+
         run_aggregate_df.loc[agg_count,"state"]=run['state']
  
         if run['repository']=='https://github.com/icgc-argo/dna-seq-processing-wfs.git' \
         or run['repository']=='https://github.com/icgc-argo/dna-seq-processing-wfs' \
         or run['repository']=='https://github.com/icgc-argo-workflows/dna-seq-processing-wfs': 
             for z in ["alignedSeqQC","gatkCollectOxogMetrics","readGroupUBamQC","seqDataToLaneBam","aligned-seq-QC","bwaMemAligner","bamMergeSortMarkdup","read-group-UBam-QC"]:
-                run_aggregate_df.loc[agg_count,"%s_mem" % (z)]=run['parameters'][z]["mem"]
-                run_aggregate_df.loc[agg_count,"%s_cpus" % (z)]=run['parameters'][z]["cpus"]
+                if run['parameters'].get(z):
+                    run_aggregate_df.loc[agg_count,"%s_mem" % (z)]=run['parameters'][z]["mem"]
+                    run_aggregate_df.loc[agg_count,"%s_cpus" % (z)]=run['parameters'][z]["cpus"]
         
         if run['startTime'] and run['completeTime']:
             run_aggregate_df.loc[agg_count,"realtime"]=(int(run['completeTime'])/3.6e+6)-(int(run['startTime'])/3.6e+6)
